@@ -376,7 +376,7 @@ function createPaddleShaderMaterial(color) {
                 
                 // Define number of circles and their speed
                 int numCircles = 4;
-                float speed = 1.0; // Faster expansion
+                float speed = 1.5; // Faster expansion
                 
                 for(int i = 1; i <= 4; i++) {
                     float radius = impactTime * speed * float(i);
@@ -421,6 +421,7 @@ function createForcefieldShaderMaterial() {
     const fragmentShader = `
         uniform bool forcefieldActive;
         uniform float forcefieldTime;
+        uniform vec2 impactPoint; // Normalized (0 to 1)
         
         varying vec2 vUv;
         
@@ -429,7 +430,7 @@ function createForcefieldShaderMaterial() {
                 discard;
             }
             
-            float dist = distance(vUv, vec2(0.5, 0.5));
+            float dist = distance(vUv, impactPoint);
             float radius = forcefieldTime;
             float thickness = 0.05;
             float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
@@ -441,6 +442,7 @@ function createForcefieldShaderMaterial() {
     const uniforms = {
         forcefieldActive: { value: false },
         forcefieldTime: { value: 0.0 },
+        impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
     };
 
     const shaderMaterial = new THREE.ShaderMaterial({
@@ -492,7 +494,7 @@ function updateImpactEffects() {
     });
 
     // Update forcefield planes
-    Object.values(forcefieldPlanes).forEach(plane => {
+    Object.entries(forcefieldPlanes).forEach(([face, plane]) => {
         if (plane.material.uniforms.forcefieldActive.value) {
             const elapsedTime = (Date.now() - plane.userData.forcefieldStart) / 1000; // in seconds
             plane.material.uniforms.forcefieldTime.value = elapsedTime;
@@ -514,14 +516,20 @@ function updateTeapot(teapotObj) {
     teapotObj.position.add(currentBallSpeed);
 
     // Bounce off walls and trigger forcefield
-    if (teapotObj.position.y > 15 - 1.5 || teapotObj.position.y < -15 + 1.5) {
+    if (teapotObj.position.y > 15 - 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
         triggerForcefield('top', teapotObj.position.clone());
+    }
+    if (teapotObj.position.y < -15 + 1.5) {
+        currentBallSpeed.y = -currentBallSpeed.y;
         triggerForcefield('bottom', teapotObj.position.clone());
     }
-    if (teapotObj.position.z > 10 - 1.5 || teapotObj.position.z < -10 + 1.5) {
+    if (teapotObj.position.z > 10 - 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
         triggerForcefield('front', teapotObj.position.clone());
+    }
+    if (teapotObj.position.z < -10 + 1.5) {
+        currentBallSpeed.z = -currentBallSpeed.z;
         triggerForcefield('back', teapotObj.position.clone());
     }
 
@@ -965,7 +973,7 @@ function triggerForcefield(face, impactPosition) {
         plane.worldToLocal(localImpact.copy(impactPosition));
 
         // Normalize the local impact position based on plane size
-        const planeSize = {
+        const planeSizes = {
             front: { width: 50, height: 30 },
             back: { width: 50, height: 30 },
             left: { width: 20, height: 30 },
@@ -974,7 +982,9 @@ function triggerForcefield(face, impactPosition) {
             bottom: { width: 50, height: 20 },
         };
 
-        const size = planeSize[face];
+        const size = planeSizes[face];
+        if (!size) return;
+
         const normalizedImpact = new THREE.Vector2(
             (localImpact.x / (size.width / 2) + 1.0) / 2.0,
             (localImpact.y / (size.height / 2) + 1.0) / 2.0
@@ -983,8 +993,10 @@ function triggerForcefield(face, impactPosition) {
         // Update shader uniforms
         plane.material.uniforms.forcefieldActive.value = true;
         plane.material.uniforms.forcefieldTime.value = 0.0;
+        plane.material.uniforms.impactPoint.value = normalizedImpact;
         plane.userData.forcefieldStart = Date.now();
 
-        // Optionally, you can pass the impact point if needed
+        // Flag the material as needing update (optional)
+        plane.material.needsUpdate = true;
     }
 }
