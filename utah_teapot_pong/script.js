@@ -21,7 +21,7 @@ const paddleSpeed = 0.6;
 let playerScore = 0;
 let aiScore = 0;
 let isPaused = false;
-let powerUpMessageTimeout; // Added variable for power-up message timeout
+let powerUpMessageTimeout; // Variable for power-up message timeout
 
 // Audio variables
 let audioContext;
@@ -81,10 +81,10 @@ cameraSelect.addEventListener('change', (e) => {
     cameraMode = e.target.value;
 });
 bgmVolumeSlider.addEventListener('input', (e) => {
-    bgmGain.gain.value = parseFloat(e.target.value);
+    if (bgmGain) bgmGain.gain.value = parseFloat(e.target.value);
 });
 sfxVolumeSlider.addEventListener('input', (e) => {
-    sfxGain.gain.value = parseFloat(e.target.value);
+    if (sfxGain) sfxGain.gain.value = parseFloat(e.target.value);
 });
 showCollisionCheckbox.addEventListener('change', (e) => {
     showCollisionBounds = e.target.checked;
@@ -191,25 +191,24 @@ function initAudio() {
 
     // Create gain nodes for background music and sound effects
     bgmGain = audioContext.createGain();
-    bgmGain.gain.value = bgmVolumeSlider.value;
+    bgmGain.gain.value = parseFloat(bgmVolumeSlider.value);
     bgmGain.connect(audioContext.destination);
 
     sfxGain = audioContext.createGain();
-    sfxGain.gain.value = sfxVolumeSlider.value;
+    sfxGain.gain.value = parseFloat(sfxVolumeSlider.value);
     sfxGain.connect(audioContext.destination);
 }
 
 // Create game objects
 function createGameObjects() {
-    // Create the player's paddle
+    // Create the player's paddle with ShaderMaterial
     const paddleGeometry = new THREE.BoxGeometry(0.5, 6, 6);
-    const paddleMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+    const paddleMaterial = createPaddleShaderMaterial();
     playerPaddle = new THREE.Mesh(paddleGeometry, paddleMaterial);
     playerPaddle.position.set(-25, 0, 0);
-    playerPaddle.userData.originalSize = paddleGeometry.parameters;
     scene.add(playerPaddle);
 
-    // Create the AI's paddle
+    // Create the AI's paddle (static, using basic material)
     const aiPaddleMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
     aiPaddle = new THREE.Mesh(paddleGeometry, aiPaddleMaterial);
     aiPaddle.position.set(25, 0, 0);
@@ -250,6 +249,79 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+// ShaderMaterial for Paddle with Impact Effect
+function createPaddleShaderMaterial() {
+    const vertexShader = `
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        
+        void main() {
+            vUv = uv;
+            vPosition = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    const fragmentShader = `
+        uniform vec3 baseColor;
+        uniform vec2 impactPoint;
+        uniform float impactTime;
+        uniform bool impactActive;
+        
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        
+        void main() {
+            vec3 color = baseColor;
+            
+            if (impactActive) {
+                // Convert position to 2D plane (y and z)
+                vec2 pos = vPosition.yz;
+                
+                // Normalize impactPoint and pos
+                vec2 normPos = pos / vec2(3.0, 3.0); // Assuming paddle size is y=6, z=6
+                vec2 normImpact = impactPoint / vec2(3.0, 3.0);
+                
+                // Calculate distance from impact point
+                float dist = distance(normPos, normImpact);
+                
+                // Calculate the radius of the effect based on time
+                float radius = impactTime * 2.0; // Adjust speed here
+                
+                // Define the thickness of the circles
+                float thickness = 0.02;
+                
+                // Number of circles
+                int numCircles = 3;
+                
+                for(int i = 1; i <= numCircles; i++) {
+                    float currentRadius = radius * float(i);
+                    float alpha = smoothstep(currentRadius - thickness, currentRadius, dist) - 
+                                  smoothstep(currentRadius, currentRadius + thickness, dist);
+                    color += vec3(1.0, 1.0, 1.0) * alpha * 0.5; // White circles with opacity
+                }
+            }
+            
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `;
+
+    const uniforms = {
+        baseColor: { value: new THREE.Color(0x00ff00) },
+        impactPoint: { value: new THREE.Vector2(0, 0) },
+        impactTime: { value: 0.0 },
+        impactActive: { value: false },
+    };
+
+    const shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+    });
+
+    return shaderMaterial;
+}
+
 // Game loop
 function animate() {
     requestAnimationFrame(animate);
@@ -269,18 +341,34 @@ function animate() {
         updateTeapotCollisionBounds();
     }
 
+    // Update shader uniforms for impact effects
+    if (playerPaddle.material.uniforms.impactActive.value) {
+        const elapsedTime = (Date.now() - playerPaddle.userData.impactStart) / 1000; // in seconds
+        playerPaddle.material.uniforms.impactTime.value = elapsedTime;
+
+        if (elapsedTime > 1.0) { // Duration of the effect
+            playerPaddle.material.uniforms.impactActive.value = false;
+        }
+    }
+
     renderer.render(scene, camera);
 }
 
 function updateTeapot(teapotObj) {
-    teapotObj.position.add(ballSpeed);
+    // Use individual ballSpeed for additional teapots
+    let currentBallSpeed = ballSpeed;
+    if (teapotObj.userData.ballSpeed) {
+        currentBallSpeed = teapotObj.userData.ballSpeed;
+    }
+
+    teapotObj.position.add(currentBallSpeed);
 
     // Bounce off walls
     if (teapotObj.position.y > 15 - 1.5 || teapotObj.position.y < -15 + 1.5) {
-        ballSpeed.y = -ballSpeed.y;
+        currentBallSpeed.y = -currentBallSpeed.y;
     }
     if (teapotObj.position.z > 10 - 1.5 || teapotObj.position.z < -10 + 1.5) {
-        ballSpeed.z = -ballSpeed.z;
+        currentBallSpeed.z = -currentBallSpeed.z;
     }
 
     // Check for collisions with paddles
@@ -293,12 +381,14 @@ function updateTeapot(teapotObj) {
         aiScoreElement.textContent = `AI: ${aiScore}`;
         playScoreSound();
         resetBall(teapotObj);
+        triggerScoreEffect('ai');
     }
     if (teapotObj.position.x > 25) {
         playerScore++;
         playerScoreElement.textContent = `Player: ${playerScore}`;
         playScoreSound();
         resetBall(teapotObj);
+        triggerScoreEffect('player');
     }
 
     // Check for collision with power-ups
@@ -319,10 +409,12 @@ function checkPaddleCollision(teapotObj, paddle) {
         Math.abs(teapotObj.position.y - paddle.position.y) < paddleSize.height / 2 + 1.5 &&
         Math.abs(teapotObj.position.z - paddle.position.z) < paddleSize.depth / 2 + 1.5
     ) {
+        // Reverse X direction
         ballSpeed.x = -ballSpeed.x;
+
         // Adjust ball speed based on paddle movement
-        ballSpeed.y += (paddle === playerPaddle ? moveUp - moveDown : 0) * 0.1;
-        ballSpeed.z += (paddle === playerPaddle ? moveForward - moveBackward : 0) * 0.1;
+        ballSpeed.y += (paddle === playerPaddle ? (moveUp ? 0.1 : (moveDown ? -0.1 : 0)) : 0);
+        ballSpeed.z += (paddle === playerPaddle ? (moveForward ? 0.1 : (moveBackward ? -0.1 : 0)) : 0);
 
         // Prevent sticking
         if (paddle === playerPaddle) {
@@ -333,6 +425,9 @@ function checkPaddleCollision(teapotObj, paddle) {
 
         // Play paddle hit sound
         playPaddleHitSound();
+
+        // Trigger visual effect on paddle
+        triggerPaddleHitEffect(paddle, teapotObj.position);
     }
 }
 
@@ -473,12 +568,8 @@ function displayPowerUpMessage(type) {
 }
 
 function enlargePaddle() {
-    playerPaddle.scale.y = 1.5;
-    playerPaddle.scale.z = 1.5;
-    setTimeout(() => {
-        playerPaddle.scale.y = 1;
-        playerPaddle.scale.z = 1;
-    }, 5000);
+    // No scaling; shader handles visual effect
+    // Optionally, you can implement size changes or other effects here
 }
 
 function slowTeapot() {
@@ -496,12 +587,15 @@ function spawnAdditionalTeapots() {
         const newTeapot = new THREE.Mesh(teapotGeometry, teapotMaterial);
         newTeapot.position.copy(teapot.position);
 
-        // Assign a unique speed vector with spread
-        const spread = 0.2;
-        const newBallSpeed = ballSpeed.clone();
-        newBallSpeed.x += (Math.random() - 0.5) * spread;
-        newBallSpeed.y += (Math.random() - 0.5) * spread;
-        newBallSpeed.z += (Math.random() - 0.5) * spread;
+        // Assign a unique speed vector with more noticeable spread
+        const spreadAngle = (Math.PI / 4) * (i === 0 ? -1 : 1); // Spread left and right by 45 degrees
+        const speedMagnitude = 0.4;
+        const angle = Math.atan2(ballSpeed.y, ballSpeed.z) + spreadAngle;
+        const newBallSpeed = new THREE.Vector3(
+            ballSpeed.x * 1, // Keep x speed same
+            speedMagnitude * Math.sin(angle),
+            speedMagnitude * Math.cos(angle)
+        );
         newTeapot.userData.ballSpeed = newBallSpeed;
 
         scene.add(newTeapot);
@@ -598,10 +692,7 @@ function playBackgroundMusic() {
     if (bgmPlaying) return; // Prevent multiple background music instances
     bgmPlaying = true;
 
-    const oscillator = audioContext.createOscillator();
-    oscillator.type = 'sine';
-
-    // Define a simple melody (C4, D4, E4, F4, G4, A4, B4, C5)
+    // Create a simple, looping melody using OscillatorNodes
     const melody = [
         { freq: 261.63, duration: 0.5 }, // C4
         { freq: 293.66, duration: 0.5 }, // D4
@@ -616,21 +707,29 @@ function playBackgroundMusic() {
     let currentTime = audioContext.currentTime;
 
     melody.forEach(note => {
+        const oscillator = audioContext.createOscillator();
+        oscillator.type = 'triangle';
         oscillator.frequency.setValueAtTime(note.freq, currentTime);
+        oscillator.connect(bgmGain);
+        oscillator.start(currentTime);
+        oscillator.stop(currentTime + note.duration);
         currentTime += note.duration;
     });
 
-    oscillator.connect(bgmGain);
-    oscillator.start();
-
-    // Loop the melody
-    oscillator.onended = () => {
-        if (bgmPlaying) {
-            playBackgroundMusic();
-        }
-    };
-
-    oscillator.stop(currentTime);
+    // Schedule looping
+    const totalDuration = melody.reduce((sum, note) => sum + note.duration, 0);
+    setInterval(() => {
+        let loopTime = audioContext.currentTime;
+        melody.forEach(note => {
+            const oscillator = audioContext.createOscillator();
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(note.freq, loopTime);
+            oscillator.connect(bgmGain);
+            oscillator.start(loopTime);
+            oscillator.stop(loopTime + note.duration);
+            loopTime += note.duration;
+        });
+    }, totalDuration * 1000);
 }
 
 function playPaddleHitSound() {
@@ -658,5 +757,40 @@ function playPowerUpSound() {
     oscillator.connect(sfxGain);
     oscillator.start();
     oscillator.stop(audioContext.currentTime + 0.2);
+}
+
+// Visual Effects on Paddle Hit
+
+function triggerPaddleHitEffect(paddle, impactPosition) {
+    // Convert world position to local position relative to paddle
+    const localImpact = new THREE.Vector3();
+    paddle.worldToLocal(localImpact.copy(impactPosition));
+
+    // Normalize the local impact position based on paddle size
+    const normalizedImpact = new THREE.Vector2(
+        localImpact.y / (paddle.geometry.parameters.height / 2),
+        localImpact.z / (paddle.geometry.parameters.depth / 2)
+    );
+
+    // Update shader uniforms
+    paddle.material.uniforms.impactPoint.value = normalizedImpact;
+    paddle.material.uniforms.impactTime.value = 0.0;
+    paddle.material.uniforms.impactActive.value = true;
+
+    // Record the start time
+    paddle.userData.impactStart = Date.now();
+}
+
+// Visual Effects on Scoring
+
+function triggerScoreEffect(player) {
+    // Flash the score
+    const scoreElement = player === 'player' ? playerScoreElement : aiScoreElement;
+    scoreElement.style.color = 'yellow';
+    setTimeout(() => {
+        scoreElement.style.color = 'white';
+    }, 300);
+
+    // Optional: Add more visual effects here
 }
 
