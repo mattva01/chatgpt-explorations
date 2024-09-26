@@ -244,13 +244,13 @@ function createGameObjects() {
 
     // Create the walls with ShaderMaterial
     const wallGeometry = new THREE.PlaneGeometry(30, 20);
-    const leftWallMaterial = createWallShaderMaterial();
+    const leftWallMaterial = createWallShaderMaterial(new THREE.Color(0x888888)); // Gray
     leftWall = new THREE.Mesh(wallGeometry, leftWallMaterial);
     leftWall.rotation.y = Math.PI / 2;
     leftWall.position.set(-25, 0, 0);
     scene.add(leftWall);
 
-    const rightWallMaterial = createWallShaderMaterial();
+    const rightWallMaterial = createWallShaderMaterial(new THREE.Color(0x888888)); // Gray
     rightWall = new THREE.Mesh(wallGeometry, rightWallMaterial);
     rightWall.rotation.y = -Math.PI / 2;
     rightWall.position.set(25, 0, 0);
@@ -324,8 +324,8 @@ function createPaddleShaderMaterial(baseColor) {
                 for(int i = 1; i <= 4; i++) {
                     float radius = impactTime * speed * float(i);
                     float thickness = 0.03; // Increased thickness for wider bands
-                    float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    color += vec3(1.0) * alpha * 0.7; // White circles with higher opacity
+                    float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
+                    color = mix(color, vec3(1.0), circleAlpha * 0.7); // White circles with higher opacity
                 }
             }
             
@@ -344,14 +344,13 @@ function createPaddleShaderMaterial(baseColor) {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
-        transparent: false,
     });
 
     return shaderMaterial;
 }
 
 // ShaderMaterial for Walls with Impact Effect
-function createWallShaderMaterial() {
+function createWallShaderMaterial(baseColor) {
     const vertexShader = `
         varying vec2 vUv;
         
@@ -371,7 +370,6 @@ function createWallShaderMaterial() {
         
         void main() {
             vec3 color = baseColor;
-            float alpha = 0.0;
             
             if (impactActive) {
                 // Calculate distance from impact point
@@ -379,22 +377,22 @@ function createWallShaderMaterial() {
                 
                 // Define number of circles and their speed
                 int numCircles = 4;
-                float speed = 1.0; // Increased speed for wider bands
+                float speed = 1.5; // Increased speed for wider bands
                 
                 for(int i = 1; i <= 4; i++) {
                     float radius = impactTime * speed * float(i);
-                    float thickness = 0.03; // Increased thickness for wider bands
+                    float thickness = 0.04; // Increased thickness for wider bands
                     float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    alpha += circleAlpha * 0.7; // White circles with higher opacity
+                    color = mix(color, vec3(1.0), circleAlpha * 0.8); // White circles with higher opacity
                 }
             }
             
-            gl_FragColor = vec4(color, alpha);
+            gl_FragColor = vec4(color, 1.0);
         }
     `;
 
     const uniforms = {
-        baseColor: { value: new THREE.Color(0x000000) }, // Transparent base color
+        baseColor: { value: baseColor },
         impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
         impactTime: { value: 0.0 },
         impactActive: { value: false },
@@ -404,7 +402,6 @@ function createWallShaderMaterial() {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
-        transparent: true,
     });
 
     return shaderMaterial;
