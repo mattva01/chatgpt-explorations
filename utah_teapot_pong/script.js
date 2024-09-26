@@ -10,6 +10,7 @@ let showCollisionBounds = false;
 
 // Game objects
 let playerPaddle, aiPaddle, teapot;
+let leftWall, rightWall;
 let powerUps = [];
 let powerUpTypes = ['enlarge', 'slow', 'multiball'];
 let additionalTeapots = [];
@@ -179,7 +180,7 @@ function init() {
     // Load volume settings from localStorage
     loadVolumeSettings();
 
-    // Create paddles and teapot
+    // Create paddles, walls, and teapot
     createGameObjects();
 
     // Add event listeners
@@ -230,16 +231,30 @@ function initAudio() {
 function createGameObjects() {
     // Create the player's paddle with ShaderMaterial
     const paddleGeometry = new THREE.BoxGeometry(0.5, 6, 6);
-    const playerPaddleMaterial = createPaddleShaderMaterial();
+    const playerPaddleMaterial = createPaddleShaderMaterial(new THREE.Color(0x00ff00)); // Green
     playerPaddle = new THREE.Mesh(paddleGeometry, playerPaddleMaterial);
     playerPaddle.position.set(-25, 0, 0);
     scene.add(playerPaddle);
 
     // Create the AI's paddle with ShaderMaterial
-    const aiPaddleMaterial = createPaddleShaderMaterial();
+    const aiPaddleMaterial = createPaddleShaderMaterial(new THREE.Color(0x0000ff)); // Blue
     aiPaddle = new THREE.Mesh(paddleGeometry, aiPaddleMaterial);
     aiPaddle.position.set(25, 0, 0);
     scene.add(aiPaddle);
+
+    // Create the walls with ShaderMaterial
+    const wallGeometry = new THREE.PlaneGeometry(30, 20);
+    const leftWallMaterial = createWallShaderMaterial();
+    leftWall = new THREE.Mesh(wallGeometry, leftWallMaterial);
+    leftWall.rotation.y = Math.PI / 2;
+    leftWall.position.set(-25, 0, 0);
+    scene.add(leftWall);
+
+    const rightWallMaterial = createWallShaderMaterial();
+    rightWall = new THREE.Mesh(wallGeometry, rightWallMaterial);
+    rightWall.rotation.y = -Math.PI / 2;
+    rightWall.position.set(25, 0, 0);
+    scene.add(rightWall);
 
     // Create the teapot
     const teapotSize = 1.5;
@@ -277,7 +292,7 @@ function onWindowResize() {
 }
 
 // ShaderMaterial for Paddle with Impact Effect
-function createPaddleShaderMaterial() {
+function createPaddleShaderMaterial(baseColor) {
     const vertexShader = `
         varying vec2 vUv;
         
@@ -303,14 +318,14 @@ function createPaddleShaderMaterial() {
                 float dist = distance(vUv, impactPoint);
                 
                 // Define number of circles and their speed
-                int numCircles = 3;
-                float speed = 0.5; // Adjust for faster/slower expansion
+                int numCircles = 4;
+                float speed = 1.0; // Increased speed for wider bands
                 
-                for(int i = 1; i <= 3; i++) {
+                for(int i = 1; i <= 4; i++) {
                     float radius = impactTime * speed * float(i);
-                    float thickness = 0.02;
+                    float thickness = 0.03; // Increased thickness for wider bands
                     float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    color += vec3(1.0) * alpha * 0.5; // White circles with reduced opacity
+                    color += vec3(1.0) * alpha * 0.7; // White circles with higher opacity
                 }
             }
             
@@ -319,7 +334,7 @@ function createPaddleShaderMaterial() {
     `;
 
     const uniforms = {
-        baseColor: { value: new THREE.Color(0x00ff00) },
+        baseColor: { value: baseColor },
         impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
         impactTime: { value: 0.0 },
         impactActive: { value: false },
@@ -329,6 +344,67 @@ function createPaddleShaderMaterial() {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
+        transparent: false,
+    });
+
+    return shaderMaterial;
+}
+
+// ShaderMaterial for Walls with Impact Effect
+function createWallShaderMaterial() {
+    const vertexShader = `
+        varying vec2 vUv;
+        
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    const fragmentShader = `
+        uniform vec3 baseColor;
+        uniform vec2 impactPoint; // Normalized (0 to 1)
+        uniform float impactTime; // Time elapsed since impact
+        uniform bool impactActive;
+        
+        varying vec2 vUv;
+        
+        void main() {
+            vec3 color = baseColor;
+            float alpha = 0.0;
+            
+            if (impactActive) {
+                // Calculate distance from impact point
+                float dist = distance(vUv, impactPoint);
+                
+                // Define number of circles and their speed
+                int numCircles = 4;
+                float speed = 1.0; // Increased speed for wider bands
+                
+                for(int i = 1; i <= 4; i++) {
+                    float radius = impactTime * speed * float(i);
+                    float thickness = 0.03; // Increased thickness for wider bands
+                    float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
+                    alpha += circleAlpha * 0.7; // White circles with higher opacity
+                }
+            }
+            
+            gl_FragColor = vec4(color, alpha);
+        }
+    `;
+
+    const uniforms = {
+        baseColor: { value: new THREE.Color(0x000000) }, // Transparent base color
+        impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
+        impactTime: { value: 0.0 },
+        impactActive: { value: false },
+    };
+
+    const shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        transparent: true,
     });
 
     return shaderMaterial;
@@ -370,6 +446,17 @@ function updateImpactEffects() {
             }
         }
     });
+
+    [leftWall, rightWall].forEach(wall => {
+        if (wall.material.uniforms.impactActive.value) {
+            const elapsedTime = (Date.now() - wall.userData.impactStart) / 1000; // in seconds
+            wall.material.uniforms.impactTime.value = elapsedTime;
+
+            if (elapsedTime > 1.0) { // Duration of the effect
+                wall.material.uniforms.impactActive.value = false;
+            }
+        }
+    });
 }
 
 function updateTeapot(teapotObj) {
@@ -398,6 +485,7 @@ function updateTeapot(teapotObj) {
         aiScore++;
         aiScoreElement.textContent = `AI: ${aiScore}`;
         playScoreSound();
+        triggerWallImpact(leftWall, teapotObj.position);
         resetBall(teapotObj);
         triggerScoreEffect('ai');
     }
@@ -405,6 +493,7 @@ function updateTeapot(teapotObj) {
         playerScore++;
         playerScoreElement.textContent = `Player: ${playerScore}`;
         playScoreSound();
+        triggerWallImpact(rightWall, teapotObj.position);
         resetBall(teapotObj);
         triggerScoreEffect('player');
     }
@@ -451,10 +540,7 @@ function checkPaddleCollision(teapotObj, paddle) {
 }
 
 function calculateImpactPoint(teapotObj, paddle) {
-    // Calculate intersection point based on teapot's velocity and paddle's position
-    // Assuming teapot has just collided, the impact point is teapot's current position
-    // relative to paddle
-
+    // Calculate intersection point based on teapot's position relative to paddle
     const impactPosition = teapotObj.position.clone();
     return impactPosition;
 }
@@ -597,12 +683,7 @@ function displayPowerUpMessage(type) {
 
 function enlargePaddle() {
     // Example: Change base color to indicate enlargement
-    playerPaddle.material.uniforms.baseColor.value.set(0x00ff00);
-    aiPaddle.material.uniforms.baseColor.value.set(0x0000ff);
-    setTimeout(() => {
-        playerPaddle.material.uniforms.baseColor.value.set(0x00ff00);
-        aiPaddle.material.uniforms.baseColor.value.set(0x0000ff);
-    }, 5000);
+    // Optionally, implement size changes or other effects
 }
 
 function slowTeapot() {
@@ -815,6 +896,31 @@ function triggerPaddleHitEffect(paddle, impactPosition) {
 
     // Flag the material as needing update (optional)
     paddle.material.needsUpdate = true;
+}
+
+// Visual Effects on Walls
+
+function triggerWallImpact(wall, impactPosition) {
+    // Convert world position to local position relative to wall
+    const localImpact = new THREE.Vector3();
+    wall.worldToLocal(localImpact.copy(impactPosition));
+
+    // Normalize the local impact position based on wall size
+    const normalizedImpact = new THREE.Vector2(
+        (localImpact.y / (wall.geometry.parameters.height / 2) + 1.0) / 2.0, // Normalize y to 0-1
+        (localImpact.z / (wall.geometry.parameters.width / 2) + 1.0) / 2.0  // Normalize z to 0-1
+    );
+
+    // Update shader uniforms
+    wall.material.uniforms.impactPoint.value = normalizedImpact;
+    wall.material.uniforms.impactTime.value = 0.0;
+    wall.material.uniforms.impactActive.value = true;
+
+    // Record the start time
+    wall.userData.impactStart = Date.now();
+
+    // Flag the material as needing update (optional)
+    wall.material.needsUpdate = true;
 }
 
 // Visual Effects on Scoring
