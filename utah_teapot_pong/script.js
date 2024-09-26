@@ -10,7 +10,7 @@ let showCollisionBounds = false;
 
 // Game objects
 let playerPaddle, aiPaddle, teapot;
-let leftWall, rightWall;
+let boundingBoxWalls = {};
 let powerUps = [];
 let powerUpTypes = ['enlarge', 'slow', 'multiball'];
 let additionalTeapots = [];
@@ -180,7 +180,7 @@ function init() {
     // Load volume settings from localStorage
     loadVolumeSettings();
 
-    // Create paddles, walls, and teapot
+    // Create paddles, bounding box walls, and teapot
     createGameObjects();
 
     // Add event listeners
@@ -242,19 +242,63 @@ function createGameObjects() {
     aiPaddle.position.set(25, 0, 0);
     scene.add(aiPaddle);
 
-    // Create the walls with ShaderMaterial
-    const wallGeometry = new THREE.PlaneGeometry(30, 20);
-    const leftWallMaterial = createWallShaderMaterial(new THREE.Color(0x888888)); // Gray
-    leftWall = new THREE.Mesh(wallGeometry, leftWallMaterial);
-    leftWall.rotation.y = Math.PI / 2;
-    leftWall.position.set(-25, 0, 0);
-    scene.add(leftWall);
+    // Create the bounding box walls with ShaderMaterial
+    const wallSize = { width: 50, height: 30, depth: 20 };
+    const wallThickness = 0.5;
 
-    const rightWallMaterial = createWallShaderMaterial(new THREE.Color(0x888888)); // Gray
-    rightWall = new THREE.Mesh(wallGeometry, rightWallMaterial);
+    // Left Wall
+    const leftWallGeometry = new THREE.PlaneGeometry(wallSize.height, wallSize.depth);
+    const leftWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const leftWall = new THREE.Mesh(leftWallGeometry, leftWallMaterial);
+    leftWall.rotation.y = Math.PI / 2;
+    leftWall.position.set(-wallSize.width / 2, 0, 0);
+    scene.add(leftWall);
+    boundingBoxWalls.left = leftWall;
+
+    // Right Wall
+    const rightWallGeometry = new THREE.PlaneGeometry(wallSize.height, wallSize.depth);
+    const rightWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const rightWall = new THREE.Mesh(rightWallGeometry, rightWallMaterial);
     rightWall.rotation.y = -Math.PI / 2;
-    rightWall.position.set(25, 0, 0);
+    rightWall.position.set(wallSize.width / 2, 0, 0);
     scene.add(rightWall);
+    boundingBoxWalls.right = rightWall;
+
+    // Top Wall
+    const topWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.depth);
+    const topWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const topWall = new THREE.Mesh(topWallGeometry, topWallMaterial);
+    topWall.rotation.x = -Math.PI / 2;
+    topWall.position.set(0, wallSize.height / 2, 0);
+    scene.add(topWall);
+    boundingBoxWalls.top = topWall;
+
+    // Bottom Wall
+    const bottomWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.depth);
+    const bottomWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const bottomWall = new THREE.Mesh(bottomWallGeometry, bottomWallMaterial);
+    bottomWall.rotation.x = Math.PI / 2;
+    bottomWall.position.set(0, -wallSize.height / 2, 0);
+    scene.add(bottomWall);
+    boundingBoxWalls.bottom = bottomWall;
+
+    // Front Wall
+    const frontWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.height);
+    const frontWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const frontWall = new THREE.Mesh(frontWallGeometry, frontWallMaterial);
+    frontWall.rotation.z = Math.PI / 2;
+    frontWall.position.set(0, 0, wallSize.depth / 2);
+    scene.add(frontWall);
+    boundingBoxWalls.front = frontWall;
+
+    // Back Wall
+    const backWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.height);
+    const backWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
+    backWall.rotation.z = -Math.PI / 2;
+    backWall.position.set(0, 0, -wallSize.depth / 2);
+    scene.add(backWall);
+    boundingBoxWalls.back = backWall;
 
     // Create the teapot
     const teapotSize = 1.5;
@@ -267,90 +311,10 @@ function createGameObjects() {
     if (showCollisionBounds) {
         addCollisionBounds(teapot);
     }
-
-    // Create the bounding box
-    createBoundingBox();
 }
 
-function createBoundingBox() {
-    const boundaryWidth = 50;
-    const boundaryHeight = 30;
-    const boundaryDepth = 20;
-
-    const boundaryGeometry = new THREE.BoxGeometry(boundaryWidth, boundaryHeight, boundaryDepth);
-    const wireframe = new THREE.EdgesGeometry(boundaryGeometry);
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
-    const boundingBox = new THREE.LineSegments(wireframe, lineMaterial);
-    boundingBox.position.set(0, 0, 0);
-    scene.add(boundingBox);
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// ShaderMaterial for Paddle with Impact Effect
-function createPaddleShaderMaterial(baseColor) {
-    const vertexShader = `
-        varying vec2 vUv;
-        
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `;
-
-    const fragmentShader = `
-        uniform vec3 baseColor;
-        uniform vec2 impactPoint; // Normalized (0 to 1)
-        uniform float impactTime; // Time elapsed since impact
-        uniform bool impactActive;
-        
-        varying vec2 vUv;
-        
-        void main() {
-            vec3 color = baseColor;
-            
-            if (impactActive) {
-                // Calculate distance from impact point
-                float dist = distance(vUv, impactPoint);
-                
-                // Define number of circles and their speed
-                int numCircles = 4;
-                float speed = 1.0; // Increased speed for wider bands
-                
-                for(int i = 1; i <= 4; i++) {
-                    float radius = impactTime * speed * float(i);
-                    float thickness = 0.03; // Increased thickness for wider bands
-                    float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    color = mix(color, vec3(1.0), circleAlpha * 0.7); // White circles with higher opacity
-                }
-            }
-            
-            gl_FragColor = vec4(color, 1.0);
-        }
-    `;
-
-    const uniforms = {
-        baseColor: { value: baseColor },
-        impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
-        impactTime: { value: 0.0 },
-        impactActive: { value: false },
-    };
-
-    const shaderMaterial = new THREE.ShaderMaterial({
-        uniforms: uniforms,
-        vertexShader: vertexShader,
-        fragmentShader: fragmentShader,
-    });
-
-    return shaderMaterial;
-}
-
-// ShaderMaterial for Walls with Impact Effect
-function createWallShaderMaterial(baseColor) {
+// Function to create ShaderMaterial for Bounding Box Walls
+function createBoundingBoxShaderMaterial(baseColor) {
     const vertexShader = `
         varying vec2 vUv;
         
@@ -433,6 +397,7 @@ function animate() {
 }
 
 function updateImpactEffects() {
+    // Update paddles
     [playerPaddle, aiPaddle].forEach(paddle => {
         if (paddle.material.uniforms.impactActive.value) {
             const elapsedTime = (Date.now() - paddle.userData.impactStart) / 1000; // in seconds
@@ -444,7 +409,8 @@ function updateImpactEffects() {
         }
     });
 
-    [leftWall, rightWall].forEach(wall => {
+    // Update bounding box walls
+    Object.values(boundingBoxWalls).forEach(wall => {
         if (wall.material.uniforms.impactActive.value) {
             const elapsedTime = (Date.now() - wall.userData.impactStart) / 1000; // in seconds
             wall.material.uniforms.impactTime.value = elapsedTime;
@@ -465,7 +431,7 @@ function updateTeapot(teapotObj) {
 
     teapotObj.position.add(currentBallSpeed);
 
-    // Bounce off walls
+    // Bounce off bounding box walls
     if (teapotObj.position.y > 15 - 1.5 || teapotObj.position.y < -15 + 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
     }
@@ -482,7 +448,7 @@ function updateTeapot(teapotObj) {
         aiScore++;
         aiScoreElement.textContent = `AI: ${aiScore}`;
         playScoreSound();
-        triggerWallImpact(leftWall, teapotObj.position);
+        triggerBoundingBoxImpact('left', teapotObj.position);
         resetBall(teapotObj);
         triggerScoreEffect('ai');
     }
@@ -490,7 +456,7 @@ function updateTeapot(teapotObj) {
         playerScore++;
         playerScoreElement.textContent = `Player: ${playerScore}`;
         playScoreSound();
-        triggerWallImpact(rightWall, teapotObj.position);
+        triggerBoundingBoxImpact('right', teapotObj.position);
         resetBall(teapotObj);
         triggerScoreEffect('player');
     }
@@ -681,6 +647,13 @@ function displayPowerUpMessage(type) {
 function enlargePaddle() {
     // Example: Change base color to indicate enlargement
     // Optionally, implement size changes or other effects
+    // Here, we'll make the paddle visually larger by scaling
+    playerPaddle.scale.y = 1.5;
+    aiPaddle.scale.y = 1.5;
+    setTimeout(() => {
+        playerPaddle.scale.y = 1.0;
+        aiPaddle.scale.y = 1.0;
+    }, 5000);
 }
 
 function slowTeapot() {
@@ -797,6 +770,34 @@ function addCollisionBounds(object, isTeapot = false) {
     // Do not add to scene, as it's now a child of the object
 }
 
+// Function to trigger shader effect on bounding box walls
+function triggerBoundingBoxImpact(wallSide, impactPosition) {
+    const wall = boundingBoxWalls[wallSide];
+    if (!wall) return;
+
+    // Convert world position to local position relative to wall
+    const localImpact = new THREE.Vector3();
+    wall.worldToLocal(localImpact.copy(impactPosition));
+
+    // Normalize the local impact position based on wall size
+    const geometry = wall.geometry;
+    const normalizedImpact = new THREE.Vector2(
+        (localImpact.x / (geometry.parameters.width / 2) + 1.0) / 2.0,
+        (localImpact.y / (geometry.parameters.height / 2) + 1.0) / 2.0
+    );
+
+    // Update shader uniforms
+    wall.material.uniforms.impactPoint.value = normalizedImpact;
+    wall.material.uniforms.impactTime.value = 0.0;
+    wall.material.uniforms.impactActive.value = true;
+
+    // Record the start time
+    wall.userData.impactStart = Date.now();
+
+    // Flag the material as needing update
+    wall.material.needsUpdate = true;
+}
+
 // Sound Generation Functions Using Web Audio API
 
 function playBackgroundMusic() {
@@ -891,33 +892,8 @@ function triggerPaddleHitEffect(paddle, impactPosition) {
     // Record the start time
     paddle.userData.impactStart = Date.now();
 
-    // Flag the material as needing update (optional)
+    // Flag the material as needing update
     paddle.material.needsUpdate = true;
-}
-
-// Visual Effects on Walls
-
-function triggerWallImpact(wall, impactPosition) {
-    // Convert world position to local position relative to wall
-    const localImpact = new THREE.Vector3();
-    wall.worldToLocal(localImpact.copy(impactPosition));
-
-    // Normalize the local impact position based on wall size
-    const normalizedImpact = new THREE.Vector2(
-        (localImpact.y / (wall.geometry.parameters.height / 2) + 1.0) / 2.0, // Normalize y to 0-1
-        (localImpact.z / (wall.geometry.parameters.width / 2) + 1.0) / 2.0  // Normalize z to 0-1
-    );
-
-    // Update shader uniforms
-    wall.material.uniforms.impactPoint.value = normalizedImpact;
-    wall.material.uniforms.impactTime.value = 0.0;
-    wall.material.uniforms.impactActive.value = true;
-
-    // Record the start time
-    wall.userData.impactStart = Date.now();
-
-    // Flag the material as needing update (optional)
-    wall.material.needsUpdate = true;
 }
 
 // Visual Effects on Scoring
