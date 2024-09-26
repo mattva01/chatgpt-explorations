@@ -195,6 +195,9 @@ function init() {
     isPaused = false;
     playerScoreElement.textContent = `Player: ${playerScore}`;
     aiScoreElement.textContent = `AI: ${aiScore}`;
+
+    // Initialize teapot rotation
+    teapot.userData.rotationVelocity = new THREE.Vector3(0, 0, 0);
 }
 
 function loadVolumeSettings() {
@@ -204,13 +207,27 @@ function loadVolumeSettings() {
 
     if (savedBgmVolume !== null) {
         bgmVolumeSlider.value = savedBgmVolume;
+        if (bgmGain) {
+            bgmGain.gain.value = parseFloat(savedBgmVolume);
+        }
+    } else {
+        bgmVolumeSlider.value = 0.5;
     }
+
     if (savedSfxVolume !== null) {
         sfxVolumeSlider.value = savedSfxVolume;
+        if (sfxGain) {
+            sfxGain.gain.value = parseFloat(savedSfxVolume);
+        }
+    } else {
+        sfxVolumeSlider.value = 0.5;
     }
+
     if (savedShowCollision !== null) {
         showCollisionBounds = savedShowCollision === 'true';
         showCollisionCheckbox.checked = showCollisionBounds;
+    } else {
+        showCollisionBounds = false;
     }
 }
 
@@ -247,6 +264,7 @@ function createGameObjects() {
     const teapotGeometry = new TeapotGeometry(teapotSize);
     const teapotMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     teapot = new THREE.Mesh(teapotGeometry, teapotMaterial);
+    teapot.position.set(0, 0, 0);
     scene.add(teapot);
 
     // Create the forcefield
@@ -504,6 +522,16 @@ function updateImpactEffects() {
             }
         }
     });
+
+    // Apply teapot rotation based on rotationVelocity
+    if (teapot.userData.rotationVelocity) {
+        teapot.rotation.x += teapot.userData.rotationVelocity.x;
+        teapot.rotation.y += teapot.userData.rotationVelocity.y;
+        teapot.rotation.z += teapot.userData.rotationVelocity.z;
+
+        // Apply damping to rotationVelocity
+        teapot.userData.rotationVelocity.multiplyScalar(0.98);
+    }
 }
 
 function updateTeapot(teapotObj) {
@@ -519,18 +547,22 @@ function updateTeapot(teapotObj) {
     if (teapotObj.position.y > 15 - 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
         triggerForcefield('top', teapotObj.position.clone());
+        applyAngularMomentum(teapotObj, 'top');
     }
     if (teapotObj.position.y < -15 + 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
         triggerForcefield('bottom', teapotObj.position.clone());
+        applyAngularMomentum(teapotObj, 'bottom');
     }
     if (teapotObj.position.z > 10 - 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
         triggerForcefield('front', teapotObj.position.clone());
+        applyAngularMomentum(teapotObj, 'front');
     }
     if (teapotObj.position.z < -10 + 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
         triggerForcefield('back', teapotObj.position.clone());
+        applyAngularMomentum(teapotObj, 'back');
     }
 
     // Check for collisions with paddles
@@ -591,6 +623,9 @@ function checkPaddleCollision(teapotObj, paddle) {
         // Trigger visual effect on paddle
         const impactPoint = calculateImpactPoint(teapotObj, paddle);
         triggerPaddleHitEffect(paddle, impactPoint);
+
+        // Apply angular momentum based on impact point
+        applyAngularMomentum(teapotObj, 'paddle', impactPoint);
     }
 }
 
@@ -656,6 +691,9 @@ function resetBall(teapotObj) {
     ballSpeed.x = (Math.random() > 0.5 ? 1 : -1) * initialBallSpeed.x;
     ballSpeed.y = (Math.random() - 0.5) * initialBallSpeed.y * 2;
     ballSpeed.z = (Math.random() - 0.5) * initialBallSpeed.z * 2;
+
+    // Reset rotation velocity
+    teapotObj.userData.rotationVelocity.set(0, 0, 0);
 }
 
 function handlePowerUps() {
@@ -770,6 +808,9 @@ function spawnAdditionalTeapots() {
             speedMagnitude * Math.cos(angle)
         );
         newTeapot.userData.ballSpeed = newBallSpeed;
+
+        // Initialize rotation velocity
+        newTeapot.userData.rotationVelocity = new THREE.Vector3(0, 0, 0);
 
         scene.add(newTeapot);
         additionalTeapots.push(newTeapot);
@@ -963,6 +1004,43 @@ function triggerScoreEffect(player) {
     }, 300);
 }
 
+// Apply Angular Momentum to Teapot
+function applyAngularMomentum(teapotObj, collisionType, impactPoint = null) {
+    if (!teapotObj.userData.rotationVelocity) {
+        teapotObj.userData.rotationVelocity = new THREE.Vector3(0, 0, 0);
+    }
+
+    // Determine torque direction based on collision type and impact point
+    let torque = new THREE.Vector3(0, 0, 0);
+    if (collisionType === 'paddle' && impactPoint) {
+        // Calculate vector from teapot center to impact point
+        const localImpact = new THREE.Vector3();
+        teapotObj.worldToLocal(localImpact.copy(impactPoint));
+        torque.set(localImpact.z, 0, -localImpact.y).normalize().multiplyScalar(0.05);
+    } else {
+        // For wall collisions, apply torque based on which wall was hit
+        switch (collisionType) {
+            case 'top':
+                torque.set(0, 0, -0.05);
+                break;
+            case 'bottom':
+                torque.set(0, 0, 0.05);
+                break;
+            case 'front':
+                torque.set(0.05, 0, 0);
+                break;
+            case 'back':
+                torque.set(-0.05, 0, 0);
+                break;
+            default:
+                torque.set(0, 0, 0);
+        }
+    }
+
+    // Apply torque to rotation velocity
+    teapotObj.userData.rotationVelocity.add(torque);
+}
+
 // Forcefield Effect
 
 function triggerForcefield(face, impactPosition) {
@@ -998,5 +1076,8 @@ function triggerForcefield(face, impactPosition) {
 
         // Flag the material as needing update (optional)
         plane.material.needsUpdate = true;
+
+        // Apply angular momentum
+        applyAngularMomentum(teapot, face, impactPosition);
     }
 }
