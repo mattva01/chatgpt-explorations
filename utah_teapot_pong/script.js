@@ -163,7 +163,7 @@ function init() {
     camera.position.set(-35, 5, 0);
     cameraGroup.add(camera);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
@@ -248,7 +248,7 @@ function createGameObjects() {
 
     // Left Wall
     const leftWallGeometry = new THREE.PlaneGeometry(wallSize.height, wallSize.depth);
-    const leftWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const leftWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
     const leftWall = new THREE.Mesh(leftWallGeometry, leftWallMaterial);
     leftWall.rotation.y = Math.PI / 2;
     leftWall.position.set(-wallSize.width / 2, 0, 0);
@@ -257,7 +257,7 @@ function createGameObjects() {
 
     // Right Wall
     const rightWallGeometry = new THREE.PlaneGeometry(wallSize.height, wallSize.depth);
-    const rightWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const rightWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
     const rightWall = new THREE.Mesh(rightWallGeometry, rightWallMaterial);
     rightWall.rotation.y = -Math.PI / 2;
     rightWall.position.set(wallSize.width / 2, 0, 0);
@@ -266,7 +266,7 @@ function createGameObjects() {
 
     // Top Wall
     const topWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.depth);
-    const topWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const topWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
     const topWall = new THREE.Mesh(topWallGeometry, topWallMaterial);
     topWall.rotation.x = -Math.PI / 2;
     topWall.position.set(0, wallSize.height / 2, 0);
@@ -275,7 +275,7 @@ function createGameObjects() {
 
     // Bottom Wall
     const bottomWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.depth);
-    const bottomWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const bottomWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
     const bottomWall = new THREE.Mesh(bottomWallGeometry, bottomWallMaterial);
     bottomWall.rotation.x = Math.PI / 2;
     bottomWall.position.set(0, -wallSize.height / 2, 0);
@@ -284,7 +284,7 @@ function createGameObjects() {
 
     // Front Wall
     const frontWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.height);
-    const frontWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const frontWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
     const frontWall = new THREE.Mesh(frontWallGeometry, frontWallMaterial);
     frontWall.rotation.z = Math.PI / 2;
     frontWall.position.set(0, 0, wallSize.depth / 2);
@@ -293,7 +293,7 @@ function createGameObjects() {
 
     // Back Wall
     const backWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.height);
-    const backWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0xffffff));
+    const backWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
     const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
     backWall.rotation.z = -Math.PI / 2;
     backWall.position.set(0, 0, -wallSize.depth / 2);
@@ -333,8 +333,10 @@ function createPaddleShaderMaterial(baseColor) {
         varying vec2 vUv;
         
         void main() {
+            // Base color with partial transparency
             vec3 color = baseColor;
-            
+            float alpha = 0.2; // Base opacity
+
             if (impactActive) {
                 // Calculate distance from impact point
                 float dist = distance(vUv, impactPoint);
@@ -343,15 +345,16 @@ function createPaddleShaderMaterial(baseColor) {
                 int numCircles = 4;
                 float speed = 1.0; // Increased speed for wider bands
                 
-                for(int i = 1; i <= 4; i++) {
+                for(int i = 1; i <= numCircles; i++) {
                     float radius = impactTime * speed * float(i);
                     float thickness = 0.03; // Increased thickness for wider bands
                     float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
                     color = mix(color, vec3(1.0), circleAlpha * 0.7); // White circles with higher opacity
+                    alpha = max(alpha, circleAlpha * 0.7);
                 }
             }
             
-            gl_FragColor = vec4(color, 1.0);
+            gl_FragColor = vec4(color, alpha);
         }
     `;
 
@@ -366,6 +369,9 @@ function createPaddleShaderMaterial(baseColor) {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
+        transparent: true, // Enable transparency
+        side: THREE.DoubleSide, // Render both sides
+        blending: THREE.NormalBlending, // Normal blending mode
     });
 
     return shaderMaterial;
@@ -391,8 +397,10 @@ function createBoundingBoxShaderMaterial(baseColor) {
         varying vec2 vUv;
         
         void main() {
+            // Base color with partial transparency
             vec3 color = baseColor;
-            
+            float alpha = 0.2; // Base opacity
+
             if (impactActive) {
                 // Calculate distance from impact point
                 float dist = distance(vUv, impactPoint);
@@ -401,15 +409,16 @@ function createBoundingBoxShaderMaterial(baseColor) {
                 int numCircles = 4;
                 float speed = 1.5; // Increased speed for wider bands
                 
-                for(int i = 1; i <= 4; i++) {
+                for(int i = 1; i <= numCircles; i++) {
                     float radius = impactTime * speed * float(i);
                     float thickness = 0.04; // Increased thickness for wider bands
                     float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
                     color = mix(color, vec3(1.0), circleAlpha * 0.8); // White circles with higher opacity
+                    alpha = max(alpha, circleAlpha * 0.8);
                 }
             }
             
-            gl_FragColor = vec4(color, 1.0);
+            gl_FragColor = vec4(color, alpha);
         }
     `;
 
@@ -424,6 +433,9 @@ function createBoundingBoxShaderMaterial(baseColor) {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
+        transparent: true, // Enable transparency
+        side: THREE.DoubleSide, // Render both sides
+        blending: THREE.AdditiveBlending, // Additive blending for luminous effect
     });
 
     return shaderMaterial;
