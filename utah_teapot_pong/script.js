@@ -81,13 +81,20 @@ cameraSelect.addEventListener('change', (e) => {
     cameraMode = e.target.value;
 });
 bgmVolumeSlider.addEventListener('input', (e) => {
-    if (bgmGain) bgmGain.gain.value = parseFloat(e.target.value);
+    if (bgmGain) {
+        bgmGain.gain.value = parseFloat(e.target.value);
+        localStorage.setItem('bgmVolume', e.target.value);
+    }
 });
 sfxVolumeSlider.addEventListener('input', (e) => {
-    if (sfxGain) sfxGain.gain.value = parseFloat(e.target.value);
+    if (sfxGain) {
+        sfxGain.gain.value = parseFloat(e.target.value);
+        localStorage.setItem('sfxVolume', e.target.value);
+    }
 });
 showCollisionCheckbox.addEventListener('change', (e) => {
     showCollisionBounds = e.target.checked;
+    localStorage.setItem('showCollisionBounds', showCollisionBounds);
     updateCollisionBoundsVisibility();
 });
 
@@ -169,6 +176,9 @@ function init() {
     // Initialize Audio
     initAudio();
 
+    // Load volume settings from localStorage
+    loadVolumeSettings();
+
     // Create paddles and teapot
     createGameObjects();
 
@@ -184,6 +194,23 @@ function init() {
     isPaused = false;
     playerScoreElement.textContent = `Player: ${playerScore}`;
     aiScoreElement.textContent = `AI: ${aiScore}`;
+}
+
+function loadVolumeSettings() {
+    const savedBgmVolume = localStorage.getItem('bgmVolume');
+    const savedSfxVolume = localStorage.getItem('sfxVolume');
+    const savedShowCollision = localStorage.getItem('showCollisionBounds');
+
+    if (savedBgmVolume !== null) {
+        bgmVolumeSlider.value = savedBgmVolume;
+    }
+    if (savedSfxVolume !== null) {
+        sfxVolumeSlider.value = savedSfxVolume;
+    }
+    if (savedShowCollision !== null) {
+        showCollisionBounds = savedShowCollision === 'true';
+        showCollisionCheckbox.checked = showCollisionBounds;
+    }
 }
 
 function initAudio() {
@@ -203,13 +230,13 @@ function initAudio() {
 function createGameObjects() {
     // Create the player's paddle with ShaderMaterial
     const paddleGeometry = new THREE.BoxGeometry(0.5, 6, 6);
-    const paddleMaterial = createPaddleShaderMaterial();
-    playerPaddle = new THREE.Mesh(paddleGeometry, paddleMaterial);
+    const playerPaddleMaterial = createPaddleShaderMaterial();
+    playerPaddle = new THREE.Mesh(paddleGeometry, playerPaddleMaterial);
     playerPaddle.position.set(-25, 0, 0);
     scene.add(playerPaddle);
 
-    // Create the AI's paddle (static, using basic material)
-    const aiPaddleMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
+    // Create the AI's paddle with ShaderMaterial
+    const aiPaddleMaterial = createPaddleShaderMaterial();
     aiPaddle = new THREE.Mesh(paddleGeometry, aiPaddleMaterial);
     aiPaddle.position.set(25, 0, 0);
     scene.add(aiPaddle);
@@ -327,16 +354,22 @@ function animate() {
     }
 
     // Update shader uniforms for impact effects
-    if (playerPaddle.material.uniforms.impactActive.value) {
-        const elapsedTime = (Date.now() - playerPaddle.userData.impactStart) / 1000; // in seconds
-        playerPaddle.material.uniforms.impactTime.value = elapsedTime;
-
-        if (elapsedTime > 1.0) { // Duration of the effect
-            playerPaddle.material.uniforms.impactActive.value = false;
-        }
-    }
+    updateImpactEffects();
 
     renderer.render(scene, camera);
+}
+
+function updateImpactEffects() {
+    [playerPaddle, aiPaddle].forEach(paddle => {
+        if (paddle.material.uniforms.impactActive.value) {
+            const elapsedTime = (Date.now() - paddle.userData.impactStart) / 1000; // in seconds
+            paddle.material.uniforms.impactTime.value = elapsedTime;
+
+            if (elapsedTime > 1.0) { // Duration of the effect
+                paddle.material.uniforms.impactActive.value = false;
+            }
+        }
+    });
 }
 
 function updateTeapot(teapotObj) {
@@ -412,8 +445,18 @@ function checkPaddleCollision(teapotObj, paddle) {
         playPaddleHitSound();
 
         // Trigger visual effect on paddle
-        triggerPaddleHitEffect(paddle, teapotObj.position);
+        const impactPoint = calculateImpactPoint(teapotObj, paddle);
+        triggerPaddleHitEffect(paddle, impactPoint);
     }
+}
+
+function calculateImpactPoint(teapotObj, paddle) {
+    // Calculate intersection point based on teapot's velocity and paddle's position
+    // Assuming teapot has just collided, the impact point is teapot's current position
+    // relative to paddle
+
+    const impactPosition = teapotObj.position.clone();
+    return impactPosition;
 }
 
 function updatePlayerPaddle() {
@@ -553,8 +596,13 @@ function displayPowerUpMessage(type) {
 }
 
 function enlargePaddle() {
-    // No scaling; shader handles visual effect
-    // Optionally, you can implement size changes or other effects here
+    // Example: Change base color to indicate enlargement
+    playerPaddle.material.uniforms.baseColor.value.set(0x00ff00);
+    aiPaddle.material.uniforms.baseColor.value.set(0x0000ff);
+    setTimeout(() => {
+        playerPaddle.material.uniforms.baseColor.value.set(0x00ff00);
+        aiPaddle.material.uniforms.baseColor.value.set(0x0000ff);
+    }, 5000);
 }
 
 function slowTeapot() {
