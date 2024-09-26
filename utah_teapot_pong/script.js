@@ -253,52 +253,37 @@ function onWindowResize() {
 function createPaddleShaderMaterial() {
     const vertexShader = `
         varying vec2 vUv;
-        varying vec3 vPosition;
         
         void main() {
             vUv = uv;
-            vPosition = position;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
     `;
 
     const fragmentShader = `
         uniform vec3 baseColor;
-        uniform vec2 impactPoint;
-        uniform float impactTime;
+        uniform vec2 impactPoint; // Normalized (0 to 1)
+        uniform float impactTime; // Time elapsed since impact
         uniform bool impactActive;
         
         varying vec2 vUv;
-        varying vec3 vPosition;
         
         void main() {
             vec3 color = baseColor;
             
             if (impactActive) {
-                // Convert position to 2D plane (y and z)
-                vec2 pos = vPosition.yz;
-                
-                // Normalize impactPoint and pos
-                vec2 normPos = pos / vec2(3.0, 3.0); // Assuming paddle size is y=6, z=6
-                vec2 normImpact = impactPoint / vec2(3.0, 3.0);
-                
                 // Calculate distance from impact point
-                float dist = distance(normPos, normImpact);
+                float dist = distance(vUv, impactPoint);
                 
-                // Calculate the radius of the effect based on time
-                float radius = impactTime * 2.0; // Adjust speed here
-                
-                // Define the thickness of the circles
-                float thickness = 0.02;
-                
-                // Number of circles
+                // Define number of circles and their speed
                 int numCircles = 3;
+                float speed = 0.5; // Adjust for faster/slower expansion
                 
-                for(int i = 1; i <= numCircles; i++) {
-                    float currentRadius = radius * float(i);
-                    float alpha = smoothstep(currentRadius - thickness, currentRadius, dist) - 
-                                  smoothstep(currentRadius, currentRadius + thickness, dist);
-                    color += vec3(1.0, 1.0, 1.0) * alpha * 0.5; // White circles with opacity
+                for(int i = 1; i <= 3; i++) {
+                    float radius = impactTime * speed * float(i);
+                    float thickness = 0.02;
+                    float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
+                    color += vec3(1.0) * alpha * 0.5; // White circles with reduced opacity
                 }
             }
             
@@ -308,7 +293,7 @@ function createPaddleShaderMaterial() {
 
     const uniforms = {
         baseColor: { value: new THREE.Color(0x00ff00) },
-        impactPoint: { value: new THREE.Vector2(0, 0) },
+        impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
         impactTime: { value: 0.0 },
         impactActive: { value: false },
     };
@@ -768,8 +753,8 @@ function triggerPaddleHitEffect(paddle, impactPosition) {
 
     // Normalize the local impact position based on paddle size
     const normalizedImpact = new THREE.Vector2(
-        localImpact.y / (paddle.geometry.parameters.height / 2),
-        localImpact.z / (paddle.geometry.parameters.depth / 2)
+        (localImpact.y / (paddle.geometry.parameters.height / 2) + 1.0) / 2.0, // Normalize y to 0-1
+        (localImpact.z / (paddle.geometry.parameters.depth / 2) + 1.0) / 2.0  // Normalize z to 0-1
     );
 
     // Update shader uniforms
@@ -779,6 +764,9 @@ function triggerPaddleHitEffect(paddle, impactPosition) {
 
     // Record the start time
     paddle.userData.impactStart = Date.now();
+
+    // Flag the material as needing update (optional)
+    paddle.material.needsUpdate = true;
 }
 
 // Visual Effects on Scoring
