@@ -13,7 +13,7 @@ let playerPaddle, aiPaddle, teapot;
 let powerUps = [];
 let powerUpTypes = ['enlarge', 'slow', 'multiball'];
 let additionalTeapots = [];
-let forcefield;
+let forcefieldPlanes = {};
 
 // Game variables
 let ballSpeed;
@@ -280,11 +280,66 @@ function createForcefield() {
     const boundaryHeight = 30;
     const boundaryDepth = 20;
 
-    const forcefieldGeometry = new THREE.BoxGeometry(boundaryWidth, boundaryHeight, boundaryDepth);
-    const forcefieldMaterial = createForcefieldShaderMaterial();
-    forcefield = new THREE.Mesh(forcefieldGeometry, forcefieldMaterial);
-    forcefield.position.set(0, 0, 0);
-    scene.add(forcefield);
+    const materialFront = createForcefieldShaderMaterial();
+    const materialBack = createForcefieldShaderMaterial();
+    const materialLeft = createForcefieldShaderMaterial();
+    const materialRight = createForcefieldShaderMaterial();
+    const materialTop = createForcefieldShaderMaterial();
+    const materialBottom = createForcefieldShaderMaterial();
+
+    const planeFront = new THREE.Mesh(
+        new THREE.PlaneGeometry(boundaryWidth, boundaryHeight),
+        materialFront
+    );
+    planeFront.position.set(0, 0, boundaryDepth / 2);
+    planeFront.rotation.y = 0;
+    scene.add(planeFront);
+    forcefieldPlanes.front = planeFront;
+
+    const planeBack = new THREE.Mesh(
+        new THREE.PlaneGeometry(boundaryWidth, boundaryHeight),
+        materialBack
+    );
+    planeBack.position.set(0, 0, -boundaryDepth / 2);
+    planeBack.rotation.y = Math.PI;
+    scene.add(planeBack);
+    forcefieldPlanes.back = planeBack;
+
+    const planeLeft = new THREE.Mesh(
+        new THREE.PlaneGeometry(boundaryDepth, boundaryHeight),
+        materialLeft
+    );
+    planeLeft.position.set(-boundaryWidth / 2, 0, 0);
+    planeLeft.rotation.y = Math.PI / 2;
+    scene.add(planeLeft);
+    forcefieldPlanes.left = planeLeft;
+
+    const planeRight = new THREE.Mesh(
+        new THREE.PlaneGeometry(boundaryDepth, boundaryHeight),
+        materialRight
+    );
+    planeRight.position.set(boundaryWidth / 2, 0, 0);
+    planeRight.rotation.y = -Math.PI / 2;
+    scene.add(planeRight);
+    forcefieldPlanes.right = planeRight;
+
+    const planeTop = new THREE.Mesh(
+        new THREE.PlaneGeometry(boundaryWidth, boundaryDepth),
+        materialTop
+    );
+    planeTop.position.set(0, boundaryHeight / 2, 0);
+    planeTop.rotation.x = -Math.PI / 2;
+    scene.add(planeTop);
+    forcefieldPlanes.top = planeTop;
+
+    const planeBottom = new THREE.Mesh(
+        new THREE.PlaneGeometry(boundaryWidth, boundaryDepth),
+        materialBottom
+    );
+    planeBottom.position.set(0, -boundaryHeight / 2, 0);
+    planeBottom.rotation.x = Math.PI / 2;
+    scene.add(planeBottom);
+    forcefieldPlanes.bottom = planeBottom;
 }
 
 function onWindowResize() {
@@ -320,14 +375,14 @@ function createPaddleShaderMaterial(color) {
                 float dist = distance(vUv, impactPoint);
                 
                 // Define number of circles and their speed
-                int numCircles = 3;
+                int numCircles = 4;
                 float speed = 1.0; // Faster expansion
                 
-                for(int i = 1; i <= 3; i++) {
+                for(int i = 1; i <= 4; i++) {
                     float radius = impactTime * speed * float(i);
-                    float thickness = 0.03; // Wider bands
+                    float thickness = 0.04; // Wider bands
                     float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    color += vec3(1.0) * alpha * 0.7; // More contrasting
+                    color += vec3(1.0) * alpha * 0.8; // More contrasting
                 }
             }
             
@@ -346,6 +401,7 @@ function createPaddleShaderMaterial(color) {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
+        side: THREE.DoubleSide, // Make shader double-sided
     });
 
     return shaderMaterial;
@@ -378,7 +434,7 @@ function createForcefieldShaderMaterial() {
             float thickness = 0.05;
             float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
             
-            gl_FragColor = vec4(0.0, 0.5, 1.0, alpha * 0.5); // Semi-transparent blue
+            gl_FragColor = vec4(0.0, 0.5, 1.0, alpha * 0.7); // Semi-transparent blue
         }
     `;
 
@@ -392,6 +448,7 @@ function createForcefieldShaderMaterial() {
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
         transparent: true,
+        side: THREE.DoubleSide,
     });
 
     return shaderMaterial;
@@ -434,14 +491,17 @@ function updateImpactEffects() {
         }
     });
 
-    if (forcefield.material.uniforms.forcefieldActive.value) {
-        const elapsedTime = (Date.now() - forcefield.userData.forcefieldStart) / 1000; // in seconds
-        forcefield.material.uniforms.forcefieldTime.value = elapsedTime;
+    // Update forcefield planes
+    Object.values(forcefieldPlanes).forEach(plane => {
+        if (plane.material.uniforms.forcefieldActive.value) {
+            const elapsedTime = (Date.now() - plane.userData.forcefieldStart) / 1000; // in seconds
+            plane.material.uniforms.forcefieldTime.value = elapsedTime;
 
-        if (elapsedTime > 1.0) { // Duration of the effect
-            forcefield.material.uniforms.forcefieldActive.value = false;
+            if (elapsedTime > 1.0) { // Duration of the effect
+                plane.material.uniforms.forcefieldActive.value = false;
+            }
         }
-    }
+    });
 }
 
 function updateTeapot(teapotObj) {
@@ -456,11 +516,13 @@ function updateTeapot(teapotObj) {
     // Bounce off walls and trigger forcefield
     if (teapotObj.position.y > 15 - 1.5 || teapotObj.position.y < -15 + 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
-        triggerForcefield();
+        triggerForcefield('top', teapotObj.position.clone());
+        triggerForcefield('bottom', teapotObj.position.clone());
     }
     if (teapotObj.position.z > 10 - 1.5 || teapotObj.position.z < -10 + 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
-        triggerForcefield();
+        triggerForcefield('front', teapotObj.position.clone());
+        triggerForcefield('back', teapotObj.position.clone());
     }
 
     // Check for collisions with paddles
@@ -895,8 +957,34 @@ function triggerScoreEffect(player) {
 
 // Forcefield Effect
 
-function triggerForcefield() {
-    forcefield.material.uniforms.forcefieldActive.value = true;
-    forcefield.material.uniforms.forcefieldTime.value = 0.0;
-    forcefield.userData.forcefieldStart = Date.now();
+function triggerForcefield(face, impactPosition) {
+    const plane = forcefieldPlanes[face];
+    if (plane) {
+        // Convert world position to local position relative to plane
+        const localImpact = new THREE.Vector3();
+        plane.worldToLocal(localImpact.copy(impactPosition));
+
+        // Normalize the local impact position based on plane size
+        const planeSize = {
+            front: { width: 50, height: 30 },
+            back: { width: 50, height: 30 },
+            left: { width: 20, height: 30 },
+            right: { width: 20, height: 30 },
+            top: { width: 50, height: 20 },
+            bottom: { width: 50, height: 20 },
+        };
+
+        const size = planeSize[face];
+        const normalizedImpact = new THREE.Vector2(
+            (localImpact.x / (size.width / 2) + 1.0) / 2.0,
+            (localImpact.y / (size.height / 2) + 1.0) / 2.0
+        );
+
+        // Update shader uniforms
+        plane.material.uniforms.forcefieldActive.value = true;
+        plane.material.uniforms.forcefieldTime.value = 0.0;
+        plane.userData.forcefieldStart = Date.now();
+
+        // Optionally, you can pass the impact point if needed
+    }
 }
