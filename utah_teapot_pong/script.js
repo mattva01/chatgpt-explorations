@@ -313,7 +313,65 @@ function createGameObjects() {
     }
 }
 
-// Function to create ShaderMaterial for Bounding Box Walls
+// ShaderMaterial for Paddle with Impact Effect
+function createPaddleShaderMaterial(baseColor) {
+    const vertexShader = `
+        varying vec2 vUv;
+        
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    const fragmentShader = `
+        uniform vec3 baseColor;
+        uniform vec2 impactPoint; // Normalized (0 to 1)
+        uniform float impactTime; // Time elapsed since impact
+        uniform bool impactActive;
+        
+        varying vec2 vUv;
+        
+        void main() {
+            vec3 color = baseColor;
+            
+            if (impactActive) {
+                // Calculate distance from impact point
+                float dist = distance(vUv, impactPoint);
+                
+                // Define number of circles and their speed
+                int numCircles = 4;
+                float speed = 1.0; // Increased speed for wider bands
+                
+                for(int i = 1; i <= 4; i++) {
+                    float radius = impactTime * speed * float(i);
+                    float thickness = 0.03; // Increased thickness for wider bands
+                    float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
+                    color = mix(color, vec3(1.0), circleAlpha * 0.7); // White circles with higher opacity
+                }
+            }
+            
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `;
+
+    const uniforms = {
+        baseColor: { value: baseColor },
+        impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
+        impactTime: { value: 0.0 },
+        impactActive: { value: false },
+    };
+
+    const shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+    });
+
+    return shaderMaterial;
+}
+
+// ShaderMaterial for Bounding Box Walls with Impact Effect
 function createBoundingBoxShaderMaterial(baseColor) {
     const vertexShader = `
         varying vec2 vUv;
@@ -432,10 +490,22 @@ function updateTeapot(teapotObj) {
     teapotObj.position.add(currentBallSpeed);
 
     // Bounce off bounding box walls
-    if (teapotObj.position.y > 15 - 1.5 || teapotObj.position.y < -15 + 1.5) {
+    const wallBounds = {
+        xMin: -25 + 1.5,
+        xMax: 25 - 1.5,
+        yMin: -15 + 1.5,
+        yMax: 15 - 1.5,
+        zMin: -10 + 1.5,
+        zMax: 10 - 1.5
+    };
+
+    if (teapotObj.position.x < wallBounds.xMin || teapotObj.position.x > wallBounds.xMax) {
+        currentBallSpeed.x = -currentBallSpeed.x;
+    }
+    if (teapotObj.position.y < wallBounds.yMin || teapotObj.position.y > wallBounds.yMax) {
         currentBallSpeed.y = -currentBallSpeed.y;
     }
-    if (teapotObj.position.z > 10 - 1.5 || teapotObj.position.z < -10 + 1.5) {
+    if (teapotObj.position.z < wallBounds.zMin || teapotObj.position.z > wallBounds.zMax) {
         currentBallSpeed.z = -currentBallSpeed.z;
     }
 
@@ -645,9 +715,7 @@ function displayPowerUpMessage(type) {
 }
 
 function enlargePaddle() {
-    // Example: Change base color to indicate enlargement
-    // Optionally, implement size changes or other effects
-    // Here, we'll make the paddle visually larger by scaling
+    // Make the paddle visually larger by scaling
     playerPaddle.scale.y = 1.5;
     aiPaddle.scale.y = 1.5;
     setTimeout(() => {
@@ -909,3 +977,10 @@ function triggerScoreEffect(player) {
     // Optional: Add more visual effects here
 }
 
+// Window Resize Handler
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
