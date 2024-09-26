@@ -10,10 +10,10 @@ let showCollisionBounds = false;
 
 // Game objects
 let playerPaddle, aiPaddle, teapot;
-let boundingBoxWalls = {};
 let powerUps = [];
 let powerUpTypes = ['enlarge', 'slow', 'multiball'];
 let additionalTeapots = [];
+let forcefield;
 
 // Game variables
 let ballSpeed;
@@ -163,7 +163,7 @@ function init() {
     camera.position.set(-35, 5, 0);
     cameraGroup.add(camera);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
@@ -180,7 +180,7 @@ function init() {
     // Load volume settings from localStorage
     loadVolumeSettings();
 
-    // Create paddles, bounding box walls, and teapot
+    // Create paddles, teapot, and forcefield
     createGameObjects();
 
     // Add event listeners
@@ -231,74 +231,16 @@ function initAudio() {
 function createGameObjects() {
     // Create the player's paddle with ShaderMaterial
     const paddleGeometry = new THREE.BoxGeometry(0.5, 6, 6);
-    const playerPaddleMaterial = createPaddleShaderMaterial(new THREE.Color(0x00ff00)); // Green
+    const playerPaddleMaterial = createPaddleShaderMaterial(0x00ff00); // Green
     playerPaddle = new THREE.Mesh(paddleGeometry, playerPaddleMaterial);
     playerPaddle.position.set(-25, 0, 0);
     scene.add(playerPaddle);
 
     // Create the AI's paddle with ShaderMaterial
-    const aiPaddleMaterial = createPaddleShaderMaterial(new THREE.Color(0x0000ff)); // Blue
+    const aiPaddleMaterial = createPaddleShaderMaterial(0x0000ff); // Blue
     aiPaddle = new THREE.Mesh(paddleGeometry, aiPaddleMaterial);
     aiPaddle.position.set(25, 0, 0);
     scene.add(aiPaddle);
-
-    // Create the bounding box walls with ShaderMaterial
-    const wallSize = { width: 50, height: 30, depth: 20 };
-    const wallThickness = 0.5;
-
-    // Left Wall
-    const leftWallGeometry = new THREE.PlaneGeometry(wallSize.height, wallSize.depth);
-    const leftWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
-    const leftWall = new THREE.Mesh(leftWallGeometry, leftWallMaterial);
-    leftWall.rotation.y = Math.PI / 2;
-    leftWall.position.set(-wallSize.width / 2, 0, 0);
-    scene.add(leftWall);
-    boundingBoxWalls.left = leftWall;
-
-    // Right Wall
-    const rightWallGeometry = new THREE.PlaneGeometry(wallSize.height, wallSize.depth);
-    const rightWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
-    const rightWall = new THREE.Mesh(rightWallGeometry, rightWallMaterial);
-    rightWall.rotation.y = -Math.PI / 2;
-    rightWall.position.set(wallSize.width / 2, 0, 0);
-    scene.add(rightWall);
-    boundingBoxWalls.right = rightWall;
-
-    // Top Wall
-    const topWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.depth);
-    const topWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
-    const topWall = new THREE.Mesh(topWallGeometry, topWallMaterial);
-    topWall.rotation.x = -Math.PI / 2;
-    topWall.position.set(0, wallSize.height / 2, 0);
-    scene.add(topWall);
-    boundingBoxWalls.top = topWall;
-
-    // Bottom Wall
-    const bottomWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.depth);
-    const bottomWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
-    const bottomWall = new THREE.Mesh(bottomWallGeometry, bottomWallMaterial);
-    bottomWall.rotation.x = Math.PI / 2;
-    bottomWall.position.set(0, -wallSize.height / 2, 0);
-    scene.add(bottomWall);
-    boundingBoxWalls.bottom = bottomWall;
-
-    // Front Wall
-    const frontWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.height);
-    const frontWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
-    const frontWall = new THREE.Mesh(frontWallGeometry, frontWallMaterial);
-    frontWall.rotation.z = Math.PI / 2;
-    frontWall.position.set(0, 0, wallSize.depth / 2);
-    scene.add(frontWall);
-    boundingBoxWalls.front = frontWall;
-
-    // Back Wall
-    const backWallGeometry = new THREE.PlaneGeometry(wallSize.width, wallSize.height);
-    const backWallMaterial = createBoundingBoxShaderMaterial(new THREE.Color(0x00ffff)); // Cyan force field
-    const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
-    backWall.rotation.z = -Math.PI / 2;
-    backWall.position.set(0, 0, -wallSize.depth / 2);
-    scene.add(backWall);
-    boundingBoxWalls.back = backWall;
 
     // Create the teapot
     const teapotSize = 1.5;
@@ -307,14 +249,52 @@ function createGameObjects() {
     teapot = new THREE.Mesh(teapotGeometry, teapotMaterial);
     scene.add(teapot);
 
+    // Create the forcefield
+    createForcefield();
+
     // Create collision bounds if enabled
     if (showCollisionBounds) {
         addCollisionBounds(teapot);
+        addCollisionBounds(aiPaddle);
     }
+
+    // Create the bounding box
+    createBoundingBox();
+}
+
+function createBoundingBox() {
+    const boundaryWidth = 50;
+    const boundaryHeight = 30;
+    const boundaryDepth = 20;
+
+    const boundaryGeometry = new THREE.BoxGeometry(boundaryWidth, boundaryHeight, boundaryDepth);
+    const wireframe = new THREE.EdgesGeometry(boundaryGeometry);
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const boundingBox = new THREE.LineSegments(wireframe, lineMaterial);
+    boundingBox.position.set(0, 0, 0);
+    scene.add(boundingBox);
+}
+
+function createForcefield() {
+    const boundaryWidth = 50;
+    const boundaryHeight = 30;
+    const boundaryDepth = 20;
+
+    const forcefieldGeometry = new THREE.BoxGeometry(boundaryWidth, boundaryHeight, boundaryDepth);
+    const forcefieldMaterial = createForcefieldShaderMaterial();
+    forcefield = new THREE.Mesh(forcefieldGeometry, forcefieldMaterial);
+    forcefield.position.set(0, 0, 0);
+    scene.add(forcefield);
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 // ShaderMaterial for Paddle with Impact Effect
-function createPaddleShaderMaterial(baseColor) {
+function createPaddleShaderMaterial(color) {
     const vertexShader = `
         varying vec2 vUv;
         
@@ -333,33 +313,30 @@ function createPaddleShaderMaterial(baseColor) {
         varying vec2 vUv;
         
         void main() {
-            // Base color with partial transparency
             vec3 color = baseColor;
-            float alpha = 0.2; // Base opacity
-
+            
             if (impactActive) {
                 // Calculate distance from impact point
                 float dist = distance(vUv, impactPoint);
                 
                 // Define number of circles and their speed
-                int numCircles = 4;
-                float speed = 1.0; // Increased speed for wider bands
+                int numCircles = 3;
+                float speed = 1.0; // Faster expansion
                 
-                for(int i = 1; i <= numCircles; i++) {
+                for(int i = 1; i <= 3; i++) {
                     float radius = impactTime * speed * float(i);
-                    float thickness = 0.03; // Increased thickness for wider bands
-                    float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    color = mix(color, vec3(1.0), circleAlpha * 0.7); // White circles with higher opacity
-                    alpha = max(alpha, circleAlpha * 0.7);
+                    float thickness = 0.03; // Wider bands
+                    float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
+                    color += vec3(1.0) * alpha * 0.7; // More contrasting
                 }
             }
             
-            gl_FragColor = vec4(color, alpha);
+            gl_FragColor = vec4(color, 1.0);
         }
     `;
 
     const uniforms = {
-        baseColor: { value: baseColor },
+        baseColor: { value: new THREE.Color(color) },
         impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
         impactTime: { value: 0.0 },
         impactActive: { value: false },
@@ -369,16 +346,13 @@ function createPaddleShaderMaterial(baseColor) {
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
-        transparent: true, // Enable transparency
-        side: THREE.DoubleSide, // Render both sides
-        blending: THREE.NormalBlending, // Normal blending mode
     });
 
     return shaderMaterial;
 }
 
-// ShaderMaterial for Bounding Box Walls with Impact Effect
-function createBoundingBoxShaderMaterial(baseColor) {
+// ShaderMaterial for Forcefield
+function createForcefieldShaderMaterial() {
     const vertexShader = `
         varying vec2 vUv;
         
@@ -389,53 +363,35 @@ function createBoundingBoxShaderMaterial(baseColor) {
     `;
 
     const fragmentShader = `
-        uniform vec3 baseColor;
-        uniform vec2 impactPoint; // Normalized (0 to 1)
-        uniform float impactTime; // Time elapsed since impact
-        uniform bool impactActive;
+        uniform bool forcefieldActive;
+        uniform float forcefieldTime;
         
         varying vec2 vUv;
         
         void main() {
-            // Base color with partial transparency
-            vec3 color = baseColor;
-            float alpha = 0.2; // Base opacity
-
-            if (impactActive) {
-                // Calculate distance from impact point
-                float dist = distance(vUv, impactPoint);
-                
-                // Define number of circles and their speed
-                int numCircles = 4;
-                float speed = 1.5; // Increased speed for wider bands
-                
-                for(int i = 1; i <= numCircles; i++) {
-                    float radius = impactTime * speed * float(i);
-                    float thickness = 0.04; // Increased thickness for wider bands
-                    float circleAlpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
-                    color = mix(color, vec3(1.0), circleAlpha * 0.8); // White circles with higher opacity
-                    alpha = max(alpha, circleAlpha * 0.8);
-                }
+            if (!forcefieldActive) {
+                discard;
             }
             
-            gl_FragColor = vec4(color, alpha);
+            float dist = distance(vUv, vec2(0.5, 0.5));
+            float radius = forcefieldTime;
+            float thickness = 0.05;
+            float alpha = smoothstep(radius - thickness, radius, dist) - smoothstep(radius, radius + thickness, dist);
+            
+            gl_FragColor = vec4(0.0, 0.5, 1.0, alpha * 0.5); // Semi-transparent blue
         }
     `;
 
     const uniforms = {
-        baseColor: { value: baseColor },
-        impactPoint: { value: new THREE.Vector2(0.5, 0.5) },
-        impactTime: { value: 0.0 },
-        impactActive: { value: false },
+        forcefieldActive: { value: false },
+        forcefieldTime: { value: 0.0 },
     };
 
     const shaderMaterial = new THREE.ShaderMaterial({
         uniforms: uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
-        transparent: true, // Enable transparency
-        side: THREE.DoubleSide, // Render both sides
-        blending: THREE.AdditiveBlending, // Additive blending for luminous effect
+        transparent: true,
     });
 
     return shaderMaterial;
@@ -467,7 +423,6 @@ function animate() {
 }
 
 function updateImpactEffects() {
-    // Update paddles
     [playerPaddle, aiPaddle].forEach(paddle => {
         if (paddle.material.uniforms.impactActive.value) {
             const elapsedTime = (Date.now() - paddle.userData.impactStart) / 1000; // in seconds
@@ -479,17 +434,14 @@ function updateImpactEffects() {
         }
     });
 
-    // Update bounding box walls
-    Object.values(boundingBoxWalls).forEach(wall => {
-        if (wall.material.uniforms.impactActive.value) {
-            const elapsedTime = (Date.now() - wall.userData.impactStart) / 1000; // in seconds
-            wall.material.uniforms.impactTime.value = elapsedTime;
+    if (forcefield.material.uniforms.forcefieldActive.value) {
+        const elapsedTime = (Date.now() - forcefield.userData.forcefieldStart) / 1000; // in seconds
+        forcefield.material.uniforms.forcefieldTime.value = elapsedTime;
 
-            if (elapsedTime > 1.0) { // Duration of the effect
-                wall.material.uniforms.impactActive.value = false;
-            }
+        if (elapsedTime > 1.0) { // Duration of the effect
+            forcefield.material.uniforms.forcefieldActive.value = false;
         }
-    });
+    }
 }
 
 function updateTeapot(teapotObj) {
@@ -501,24 +453,14 @@ function updateTeapot(teapotObj) {
 
     teapotObj.position.add(currentBallSpeed);
 
-    // Bounce off bounding box walls
-    const wallBounds = {
-        xMin: -25 + 1.5,
-        xMax: 25 - 1.5,
-        yMin: -15 + 1.5,
-        yMax: 15 - 1.5,
-        zMin: -10 + 1.5,
-        zMax: 10 - 1.5
-    };
-
-    if (teapotObj.position.x < wallBounds.xMin || teapotObj.position.x > wallBounds.xMax) {
-        currentBallSpeed.x = -currentBallSpeed.x;
-    }
-    if (teapotObj.position.y < wallBounds.yMin || teapotObj.position.y > wallBounds.yMax) {
+    // Bounce off walls and trigger forcefield
+    if (teapotObj.position.y > 15 - 1.5 || teapotObj.position.y < -15 + 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
+        triggerForcefield();
     }
-    if (teapotObj.position.z < wallBounds.zMin || teapotObj.position.z > wallBounds.zMax) {
+    if (teapotObj.position.z > 10 - 1.5 || teapotObj.position.z < -10 + 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
+        triggerForcefield();
     }
 
     // Check for collisions with paddles
@@ -530,7 +472,6 @@ function updateTeapot(teapotObj) {
         aiScore++;
         aiScoreElement.textContent = `AI: ${aiScore}`;
         playScoreSound();
-        triggerBoundingBoxImpact('left', teapotObj.position);
         resetBall(teapotObj);
         triggerScoreEffect('ai');
     }
@@ -538,7 +479,6 @@ function updateTeapot(teapotObj) {
         playerScore++;
         playerScoreElement.textContent = `Player: ${playerScore}`;
         playScoreSound();
-        triggerBoundingBoxImpact('right', teapotObj.position);
         resetBall(teapotObj);
         triggerScoreEffect('player');
     }
@@ -585,7 +525,10 @@ function checkPaddleCollision(teapotObj, paddle) {
 }
 
 function calculateImpactPoint(teapotObj, paddle) {
-    // Calculate intersection point based on teapot's position relative to paddle
+    // Calculate intersection point based on teapot's velocity and paddle's position
+    // Assuming teapot has just collided, the impact point is teapot's current position
+    // relative to paddle
+
     const impactPosition = teapotObj.position.clone();
     return impactPosition;
 }
@@ -727,13 +670,9 @@ function displayPowerUpMessage(type) {
 }
 
 function enlargePaddle() {
-    // Make the paddle visually larger by scaling
-    playerPaddle.scale.y = 1.5;
-    aiPaddle.scale.y = 1.5;
-    setTimeout(() => {
-        playerPaddle.scale.y = 1.0;
-        aiPaddle.scale.y = 1.0;
-    }, 5000);
+    // Example: Change base color to indicate enlargement
+    // Currently, shader handles visual effect
+    // Optionally, implement size changes or other effects here
 }
 
 function slowTeapot() {
@@ -819,12 +758,7 @@ function updateCollisionBoundsVisibility() {
     // Add collision bounds if enabled
     if (showCollisionBounds) {
         addCollisionBounds(teapot);
-        powerUps.forEach(powerUp => {
-            addCollisionBounds(powerUp);
-        });
-        additionalTeapots.forEach(teapot => {
-            addCollisionBounds(teapot);
-        });
+        addCollisionBounds(aiPaddle);
     }
 }
 
@@ -848,34 +782,6 @@ function addCollisionBounds(object, isTeapot = false) {
     // Ensure the collision box updates with the object
     object.add(box);
     // Do not add to scene, as it's now a child of the object
-}
-
-// Function to trigger shader effect on bounding box walls
-function triggerBoundingBoxImpact(wallSide, impactPosition) {
-    const wall = boundingBoxWalls[wallSide];
-    if (!wall) return;
-
-    // Convert world position to local position relative to wall
-    const localImpact = new THREE.Vector3();
-    wall.worldToLocal(localImpact.copy(impactPosition));
-
-    // Normalize the local impact position based on wall size
-    const geometry = wall.geometry;
-    const normalizedImpact = new THREE.Vector2(
-        (localImpact.x / (geometry.parameters.width / 2) + 1.0) / 2.0,
-        (localImpact.y / (geometry.parameters.height / 2) + 1.0) / 2.0
-    );
-
-    // Update shader uniforms
-    wall.material.uniforms.impactPoint.value = normalizedImpact;
-    wall.material.uniforms.impactTime.value = 0.0;
-    wall.material.uniforms.impactActive.value = true;
-
-    // Record the start time
-    wall.userData.impactStart = Date.now();
-
-    // Flag the material as needing update
-    wall.material.needsUpdate = true;
 }
 
 // Sound Generation Functions Using Web Audio API
@@ -972,7 +878,7 @@ function triggerPaddleHitEffect(paddle, impactPosition) {
     // Record the start time
     paddle.userData.impactStart = Date.now();
 
-    // Flag the material as needing update
+    // Flag the material as needing update (optional)
     paddle.material.needsUpdate = true;
 }
 
@@ -985,14 +891,12 @@ function triggerScoreEffect(player) {
     setTimeout(() => {
         scoreElement.style.color = 'white';
     }, 300);
-
-    // Optional: Add more visual effects here
 }
 
-// Window Resize Handler
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+// Forcefield Effect
 
-    renderer.setSize(window.innerWidth, window.innerHeight);
+function triggerForcefield() {
+    forcefield.material.uniforms.forcefieldActive.value = true;
+    forcefield.material.uniforms.forcefieldTime.value = 0.0;
+    forcefield.userData.forcefieldStart = Date.now();
 }
