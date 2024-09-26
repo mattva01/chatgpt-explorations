@@ -24,8 +24,9 @@ let isPaused = false;
 let powerUpMessageTimeout; // Added variable for power-up message timeout
 
 // Audio variables
-let bgmVolume = 0.5;
-let sfxVolume = 0.5;
+let audioContext;
+let bgmGain, sfxGain;
+let bgmPlaying = false;
 
 // Control variables
 let moveForward = false;
@@ -80,10 +81,10 @@ cameraSelect.addEventListener('change', (e) => {
     cameraMode = e.target.value;
 });
 bgmVolumeSlider.addEventListener('input', (e) => {
-    bgmVolume = parseFloat(e.target.value);
+    bgmGain.gain.value = parseFloat(e.target.value);
 });
 sfxVolumeSlider.addEventListener('input', (e) => {
-    sfxVolume = parseFloat(e.target.value);
+    sfxGain.gain.value = parseFloat(e.target.value);
 });
 showCollisionCheckbox.addEventListener('change', (e) => {
     showCollisionBounds = e.target.checked;
@@ -165,6 +166,9 @@ function init() {
     const pointLight = new THREE.PointLight(0xffffff, 0.8);
     camera.add(pointLight);
 
+    // Initialize Audio
+    initAudio();
+
     // Create paddles and teapot
     createGameObjects();
 
@@ -182,6 +186,20 @@ function init() {
     aiScoreElement.textContent = `AI: ${aiScore}`;
 }
 
+function initAudio() {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Create gain nodes for background music and sound effects
+    bgmGain = audioContext.createGain();
+    bgmGain.gain.value = bgmVolumeSlider.value;
+    bgmGain.connect(audioContext.destination);
+
+    sfxGain = audioContext.createGain();
+    sfxGain.gain.value = sfxVolumeSlider.value;
+    sfxGain.connect(audioContext.destination);
+}
+
+// Create game objects
 function createGameObjects() {
     // Create the player's paddle
     const paddleGeometry = new THREE.BoxGeometry(0.5, 6, 6);
@@ -477,6 +495,15 @@ function spawnAdditionalTeapots() {
         const teapotMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
         const newTeapot = new THREE.Mesh(teapotGeometry, teapotMaterial);
         newTeapot.position.copy(teapot.position);
+
+        // Assign a unique speed vector with spread
+        const spread = 0.2;
+        const newBallSpeed = ballSpeed.clone();
+        newBallSpeed.x += (Math.random() - 0.5) * spread;
+        newBallSpeed.y += (Math.random() - 0.5) * spread;
+        newBallSpeed.z += (Math.random() - 0.5) * spread;
+        newTeapot.userData.ballSpeed = newBallSpeed;
+
         scene.add(newTeapot);
         additionalTeapots.push(newTeapot);
 
@@ -493,13 +520,17 @@ function spawnAdditionalTeapots() {
 function pauseGame() {
     isPaused = true;
     pauseMenu.style.display = 'flex';
-    if (bgmAudio) bgmAudio.stop();
+    if (bgmPlaying) {
+        audioContext.suspend();
+    }
 }
 
 function resumeGame() {
     isPaused = false;
     pauseMenu.style.display = 'none';
-    if (bgmAudio) playBackgroundMusic();
+    if (bgmPlaying) {
+        audioContext.resume();
+    }
 }
 
 function cleanupGame() {
@@ -513,9 +544,13 @@ function cleanupGame() {
     powerUps = [];
     additionalTeapots = [];
     document.body.removeChild(renderer.domElement);
-    if (bgmAudio) bgmAudio.stop();
+    if (bgmPlaying) {
+        audioContext.close();
+        bgmPlaying = false;
+    }
 }
 
+// Collision Bounds Handling
 function updateCollisionBoundsVisibility() {
     // Remove existing collision bounds
     scene.traverse(function (object) {
@@ -557,52 +592,71 @@ function addCollisionBounds(object, isTeapot = false) {
     // Do not add to scene, as it's now a child of the object
 }
 
-// Sound generation functions using Web Audio API
+// Sound Generation Functions Using Web Audio API
+
 function playBackgroundMusic() {
-    const context = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = context.createOscillator();
+    if (bgmPlaying) return; // Prevent multiple background music instances
+    bgmPlaying = true;
+
+    const oscillator = audioContext.createOscillator();
     oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(220, context.currentTime);
-    const gainNode = context.createGain();
-    gainNode.gain.value = bgmVolume;
-    oscillator.connect(gainNode).connect(context.destination);
+
+    // Define a simple melody (C4, D4, E4, F4, G4, A4, B4, C5)
+    const melody = [
+        { freq: 261.63, duration: 0.5 }, // C4
+        { freq: 293.66, duration: 0.5 }, // D4
+        { freq: 329.63, duration: 0.5 }, // E4
+        { freq: 349.23, duration: 0.5 }, // F4
+        { freq: 392.00, duration: 0.5 }, // G4
+        { freq: 440.00, duration: 0.5 }, // A4
+        { freq: 493.88, duration: 0.5 }, // B4
+        { freq: 523.25, duration: 0.5 }, // C5
+    ];
+
+    let currentTime = audioContext.currentTime;
+
+    melody.forEach(note => {
+        oscillator.frequency.setValueAtTime(note.freq, currentTime);
+        currentTime += note.duration;
+    });
+
+    oscillator.connect(bgmGain);
     oscillator.start();
-    bgmAudio = oscillator;
+
+    // Loop the melody
+    oscillator.onended = () => {
+        if (bgmPlaying) {
+            playBackgroundMusic();
+        }
+    };
+
+    oscillator.stop(currentTime);
 }
 
 function playPaddleHitSound() {
-    const context = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = context.createOscillator();
+    const oscillator = audioContext.createOscillator();
     oscillator.type = 'square';
-    oscillator.frequency.setValueAtTime(440, context.currentTime);
-    const gainNode = context.createGain();
-    gainNode.gain.value = sfxVolume;
-    oscillator.connect(gainNode).connect(context.destination);
+    oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+    oscillator.connect(sfxGain);
     oscillator.start();
-    oscillator.stop(context.currentTime + 0.1);
+    oscillator.stop(audioContext.currentTime + 0.1);
 }
 
 function playScoreSound() {
-    const context = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = context.createOscillator();
+    const oscillator = audioContext.createOscillator();
     oscillator.type = 'triangle';
-    oscillator.frequency.setValueAtTime(660, context.currentTime);
-    const gainNode = context.createGain();
-    gainNode.gain.value = sfxVolume;
-    oscillator.connect(gainNode).connect(context.destination);
+    oscillator.frequency.setValueAtTime(660, audioContext.currentTime);
+    oscillator.connect(sfxGain);
     oscillator.start();
-    oscillator.stop(context.currentTime + 0.2);
+    oscillator.stop(audioContext.currentTime + 0.2);
 }
 
 function playPowerUpSound() {
-    const context = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = context.createOscillator();
+    const oscillator = audioContext.createOscillator();
     oscillator.type = 'sawtooth';
-    oscillator.frequency.setValueAtTime(880, context.currentTime);
-    const gainNode = context.createGain();
-    gainNode.gain.value = sfxVolume;
-    oscillator.connect(gainNode).connect(context.destination);
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+    oscillator.connect(sfxGain);
     oscillator.start();
-    oscillator.stop(context.currentTime + 0.2);
+    oscillator.stop(audioContext.currentTime + 0.2);
 }
 
