@@ -548,21 +548,25 @@ function updateTeapot(teapotObj) {
         currentBallSpeed.y = -currentBallSpeed.y;
         triggerForcefield('top', teapotObj.position.clone());
         applyAngularMomentum(teapotObj, 'top');
+        playWallBounceSound(teapotObj.position.clone());
     }
     if (teapotObj.position.y < -15 + 1.5) {
         currentBallSpeed.y = -currentBallSpeed.y;
         triggerForcefield('bottom', teapotObj.position.clone());
         applyAngularMomentum(teapotObj, 'bottom');
+        playWallBounceSound(teapotObj.position.clone());
     }
     if (teapotObj.position.z > 10 - 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
         triggerForcefield('front', teapotObj.position.clone());
         applyAngularMomentum(teapotObj, 'front');
+        playWallBounceSound(teapotObj.position.clone());
     }
     if (teapotObj.position.z < -10 + 1.5) {
         currentBallSpeed.z = -currentBallSpeed.z;
         triggerForcefield('back', teapotObj.position.clone());
         applyAngularMomentum(teapotObj, 'back');
+        playWallBounceSound(teapotObj.position.clone());
     }
 
     // Check for collisions with paddles
@@ -617,8 +621,8 @@ function checkPaddleCollision(teapotObj, paddle) {
             teapotObj.position.x = paddle.position.x - paddleSize.width / 2 - 1.5;
         }
 
-        // Play paddle hit sound
-        playPaddleHitSound();
+        // Play paddle hit sound with spatialization
+        playPaddleHitSound(teapotObj.position.clone());
 
         // Trigger visual effect on paddle
         const impactPoint = calculateImpactPoint(teapotObj, paddle);
@@ -941,11 +945,50 @@ function playBackgroundMusic() {
     }, totalDuration * 1000);
 }
 
-function playPaddleHitSound() {
+function playPaddleHitSound(position) {
     const oscillator = audioContext.createOscillator();
     oscillator.type = 'square';
     oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
-    oscillator.connect(sfxGain);
+
+    const panner = audioContext.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'linear';
+    panner.refDistance = 1;
+    panner.maxDistance = 10000;
+    panner.rolloffFactor = 1;
+    panner.coneInnerAngle = 360;
+    panner.coneOuterAngle = 0;
+    panner.coneOuterGain = 0;
+
+    // Set position
+    panner.setPosition(position.x, position.y, position.z);
+
+    oscillator.connect(panner);
+    panner.connect(sfxGain);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.1);
+}
+
+function playWallBounceSound(position) {
+    const oscillator = audioContext.createOscillator();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(300, audioContext.currentTime); // Different frequency for walls
+
+    const panner = audioContext.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'linear';
+    panner.refDistance = 1;
+    panner.maxDistance = 10000;
+    panner.rolloffFactor = 1;
+    panner.coneInnerAngle = 360;
+    panner.coneOuterAngle = 0;
+    panner.coneOuterGain = 0;
+
+    // Set position
+    panner.setPosition(position.x, position.y, position.z);
+
+    oscillator.connect(panner);
+    panner.connect(sfxGain);
     oscillator.start();
     oscillator.stop(audioContext.currentTime + 0.1);
 }
